@@ -1,11 +1,8 @@
 export function merge (list, size) {
   const data = new Float32Array(size);
 
-  let offset = 0;
-
-  for (let i = 0; i < list.length; i += 1) {
+  for (let i = 0, offset = 0; i < list.length; offset += list[i].length, i += 1) {
     data.set(list[i], offset);
-    offset += list[i].length;
   }
 
   return data;

@@ -7,74 +7,76 @@ import environmentCheck from './polyfill';
 import DEFAULT_CONFIG from './config';
 import RECORDER_STATE from './state';
 
-const state = '_state';
-
 class Recorderx {
+  static audioContext = new (window.AudioContext || window.webkitAudioContext)()
+
+  sampleRate = DEFAULT_CONFIG.sampleRate
+
+  sampleBits = DEFAULT_CONFIG.sampleBits
+
+  recordable = DEFAULT_CONFIG.recordable
+
+  recorder = null
+
+  source = null
+
+  stream = null
+
+  buffer = []
+
+  bufferSize = 0
+
+  xstate = RECORDER_STATE.READY;
+
   constructor (
     {
       recordable = DEFAULT_CONFIG.recordable,
+      bufferSize = DEFAULT_CONFIG.bufferSize,
       sampleRate = DEFAULT_CONFIG.sampleRate,
       sampleBits = DEFAULT_CONFIG.sampleBits,
-      bufferSize = DEFAULT_CONFIG.bufferSize,
-      numberOfInputChannels = DEFAULT_CONFIG.numberOfInputChannels,
-      numberOfOutputChannels = DEFAULT_CONFIG.numberOfOutputChannels,
     } = DEFAULT_CONFIG,
   ) {
     this.recordable = recordable;
     this.sampleRate = sampleRate;
     this.sampleBits = sampleBits;
-
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    this.recorder = this.audioContext.createScriptProcessor(
-      bufferSize,
-      numberOfInputChannels,
-      numberOfOutputChannels,
-    );
-
-    if (recordable) {
-      this.xBuffer = [];
-      this.xSize = 0;
-    }
-
-    this.stream = undefined;
-    this[state] = RECORDER_STATE.READY;
+    this.recorder = Recorderx.audioContext.createScriptProcessor(bufferSize, 1, 1);
   }
 
   get state () {
-    return this[state];
+    return this.xstate;
   }
 
   start (audioprocessCallback) {
+    Recorderx.audioContext.resume();
+
     return new Promise((resolve, reject) => {
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
+          const source = Recorderx.audioContext.createMediaStreamSource(stream);
+          const { recorder } = this;
+
           this.stream = stream;
-          const source = this.audioContext.createMediaStreamSource(stream);
+          this.source = source;
 
-          source.connect(this.recorder);
-          this.recorder.connect(this.audioContext.destination);
-
-          this.recorder.onaudioprocess = (e) => {
+          recorder.onaudioprocess = (e) => {
             const data = e.inputBuffer.getChannelData(0);
 
             if (this.recordable) {
-              this.xBuffer.push(new Float32Array(data));
-              this.xSize += data.length;
+              this.buffer.push(new Float32Array(data));
+              this.bufferSize += data.length;
             }
 
-            const result = compress(
-              data,
-              this.audioContext.sampleRate,
-              this.sampleRate,
-            );
-            const wav = encodeWAV(result, this.sampleBits, this.sampleRate);
-
-            if (audioprocessCallback) {
-              audioprocessCallback({ data, result, wav });
+            if (typeof audioprocessCallback === 'function') {
+              audioprocessCallback(data);
             }
           };
-          this[state] = RECORDER_STATE.RECORDING;
+
+          source.connect(recorder);
+          recorder.connect(Recorderx.audioContext.destination);
+
+          this.xstate = RECORDER_STATE.RECORDING;
+
           resolve(stream);
         })
         .catch((error) => {
@@ -84,31 +86,30 @@ class Recorderx {
   }
 
   pause () {
-    this[state] = RECORDER_STATE.READY;
     this.recorder.disconnect();
+    this.source.disconnect();
     this.stream.getAudioTracks()[0].stop();
+    Recorderx.audioContext.suspend();
+    this.xstate = RECORDER_STATE.READY;
   }
 
-  close () {
-    this[state] = RECORDER_STATE.DESTROYED;
-    this.pause();
-    this.clear();
-
-    return this.audioContext.close();
+  clear () {
+    this.buffer = [];
+    this.bufferSize = 0;
   }
 
   getRecord ({
     encodeTo = undefined,
     compressable = false,
   } = {
-    compressable: false,
     encodeTo: undefined,
+    compressable: false,
   }) {
     if (this.recordable) {
-      let buffer = merge(this.xBuffer, this.xSize);
+      let buffer = merge(this.buffer, this.bufferSize);
 
       if (encodeTo === 'wav' || compressable) {
-        buffer = compress(buffer, this.audioContext.sampleRate, this.sampleRate);
+        buffer = compress(buffer, Recorderx.audioContext.sampleRate, this.sampleRate);
       }
 
       if (typeof encodeTo === 'function') {
@@ -124,13 +125,6 @@ class Recorderx {
     }
 
     return null;
-  }
-
-  clear () {
-    if (this.recordable) {
-      this.xBuffer = [];
-      this.xSize = 0;
-    }
   }
 }
 

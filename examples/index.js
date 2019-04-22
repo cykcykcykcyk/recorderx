@@ -2,10 +2,9 @@ import Recorderx, { RECORDER_STATE } from '../src/index';
 
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
-const btnStop = document.getElementById('btn-stop');
+const btnClear = document.getElementById('btn-clear');
 const dlog = document.getElementById('log');
 const audio = document.getElementById('audio');
-const audioReal = document.getElementById('audio-real');
 
 function pushLog (log, error = '') {
   const xlog = `<span style="margin-right:8px">
@@ -29,8 +28,7 @@ btnStart.addEventListener('click', () => {
   }
   if (rc.state === RECORDER_STATE.READY) {
     rc.start()
-      .then((stream) => {
-        audioReal.srcObject = stream;
+      .then(() => {
         pushLog('start recording');
       })
       .catch((error) => {
@@ -49,10 +47,6 @@ btnPause.addEventListener('click', () => {
   }
 });
 
-btnStop.addEventListener('click', () => {
-  if (rc) {
-    rc.close();
-    rc = undefined;
-    pushLog('stop recording and destroy Recorder');
-  }
+btnClear.addEventListener('click', () => {
+  rc.clear();
 });
