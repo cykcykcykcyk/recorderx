@@ -42,6 +42,7 @@ btnPause.addEventListener('click', () => {
     rc.pause();
     audio.src = URL.createObjectURL(rc.getRecord({
       encodeTo: 'wav',
+      compressable: false,
     }));
     pushLog('pause recording');
   }

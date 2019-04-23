@@ -108,7 +108,9 @@ class Recorderx {
     if (this.recordable) {
       let buffer = merge(this.buffer, this.bufferSize);
 
-      if (encodeTo === 'wav' || compressable) {
+      const latestSampleRate = compressable ? this.sampleRate : Recorderx.audioContext.sampleRate;
+
+      if (compressable) {
         buffer = compress(buffer, Recorderx.audioContext.sampleRate, this.sampleRate);
       }
 
@@ -118,7 +120,7 @@ class Recorderx {
           sampleRate: this.sampleRate,
         });
       } else if (encodeTo === 'wav') {
-        buffer = encodeWAV(buffer, this.sampleBits, this.sampleRate);
+        buffer = encodeWAV(buffer, this.sampleBits, latestSampleRate);
       }
 
       return buffer;
