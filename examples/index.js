@@ -1,4 +1,4 @@
-import Recorderx, { RECORDER_STATE } from '../src/index';
+import Recorderx, { RECORDER_STATE, ENCODE_TYPE } from '../src/index';
 
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
@@ -24,6 +24,7 @@ btnStart.addEventListener('click', () => {
   if (!rc) {
     rc = new Recorderx({
       recordable: true,
+      sampleRate: 16000,
     });
   }
   if (rc.state === RECORDER_STATE.READY) {
@@ -41,10 +42,13 @@ btnPause.addEventListener('click', () => {
   if (rc && rc.state === RECORDER_STATE.RECORDING) {
     rc.pause();
     audio.src = URL.createObjectURL(rc.getRecord({
-      encodeTo: 'wav',
-      compressable: false,
+      encodeTo: ENCODE_TYPE.WAV,
+      compressable: true,
     }));
     pushLog('pause recording');
+
+    console.log(rc.getRecord({ encodeTo: ENCODE_TYPE.RAW }));
+    console.log(rc.getRecord({ encodeTo: ENCODE_TYPE.PCM }));
   }
 });
 

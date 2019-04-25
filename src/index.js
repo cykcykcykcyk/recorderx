@@ -1,11 +1,12 @@
 import {
   merge,
   compress,
-  encodeWAV,
+  encodeToPCM,
+  encodeToWAV,
 } from './tools';
 import environmentCheck from './polyfill';
 import DEFAULT_CONFIG from './config';
-import RECORDER_STATE from './state';
+import { RECORDER_STATE, ENCODE_TYPE } from './enum';
 
 class Recorderx {
   static audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -26,7 +27,11 @@ class Recorderx {
 
   bufferSize = 0
 
-  xstate = RECORDER_STATE.READY;
+  xstate = RECORDER_STATE.READY
+
+  get state () {
+    return this.xstate;
+  }
 
   constructor (
     {
@@ -36,14 +41,12 @@ class Recorderx {
       sampleBits = DEFAULT_CONFIG.sampleBits,
     } = DEFAULT_CONFIG,
   ) {
+    const ctx = Recorderx.audioContext;
+    const creator = ctx.createScriptProcessor || ctx.createJavaScriptNode;
+    this.recorder = creator.call(ctx, bufferSize, 1, 1);
     this.recordable = recordable;
     this.sampleRate = sampleRate;
     this.sampleBits = sampleBits;
-    this.recorder = Recorderx.audioContext.createScriptProcessor(bufferSize, 1, 1);
-  }
-
-  get state () {
-    return this.xstate;
   }
 
   start (audioprocessCallback) {
@@ -53,22 +56,22 @@ class Recorderx {
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
-          const source = Recorderx.audioContext.createMediaStreamSource(stream);
           const { recorder } = this;
+          const source = Recorderx.audioContext.createMediaStreamSource(stream);
 
           this.stream = stream;
           this.source = source;
 
           recorder.onaudioprocess = (e) => {
-            const data = e.inputBuffer.getChannelData(0);
+            const channelData = e.inputBuffer.getChannelData(0);
 
             if (this.recordable) {
-              this.buffer.push(new Float32Array(data));
-              this.bufferSize += data.length;
+              this.buffer.push(channelData.slice(0));
+              this.bufferSize += channelData.length;
             }
 
             if (typeof audioprocessCallback === 'function') {
-              audioprocessCallback(data);
+              audioprocessCallback(channelData);
             }
           };
 
@@ -86,9 +89,9 @@ class Recorderx {
   }
 
   pause () {
+    this.stream.getAudioTracks()[0].stop();
     this.recorder.disconnect();
     this.source.disconnect();
-    this.stream.getAudioTracks()[0].stop();
     Recorderx.audioContext.suspend();
     this.xstate = RECORDER_STATE.READY;
   }
@@ -99,35 +102,36 @@ class Recorderx {
   }
 
   getRecord ({
-    encodeTo = undefined,
+    encodeTo = ENCODE_TYPE.RAW,
     compressable = false,
   } = {
-    encodeTo: undefined,
+    encodeTo: ENCODE_TYPE.RAW,
     compressable: false,
   }) {
     if (this.recordable) {
       let buffer = merge(this.buffer, this.bufferSize);
 
-      const actSampleRate = Recorderx.audioContext.sampleRate;
-      const latestSampleRate = compressable ? this.sampleRate : actSampleRate;
+      const inputSampleRate = Recorderx.audioContext.sampleRate;
+      compressable = compressable && (this.sampleRate < inputSampleRate);
+      const outSampleRate = compressable ? this.sampleRate : inputSampleRate;
 
       if (compressable) {
-        buffer = compress(buffer, actSampleRate, this.sampleRate);
+        buffer = compress(buffer, inputSampleRate, outSampleRate);
       }
 
-      if (typeof encodeTo === 'function') {
-        buffer = encodeTo(buffer, {
-          sampleBits: this.sampleBits,
-          sampleRate: this.sampleRate,
-        });
-      } else if (encodeTo === 'wav') {
-        buffer = encodeWAV(buffer, this.sampleBits, latestSampleRate);
+      switch (encodeTo) {
+        case ENCODE_TYPE.RAW:
+          return buffer;
+        case ENCODE_TYPE.PCM:
+          return encodeToPCM(buffer, this.sampleBits);
+        case ENCODE_TYPE.WAV:
+          return encodeToWAV(buffer, this.sampleBits, outSampleRate);
+        default:
+          throw new Error('Invalid parameter: "encodeTo" must be ENCODE_TYPE');
       }
-
-      return buffer;
     }
 
-    return null;
+    throw new Error('Configuration error: "recordable" must be set to true');
   }
 }
 
@@ -136,7 +140,8 @@ environmentCheck();
 export const audioTools = {
   merge,
   compress,
-  encodeWAV,
+  encodeToPCM,
+  encodeToWAV,
 };
-export { RECORDER_STATE };
+export { RECORDER_STATE, ENCODE_TYPE };
 export default Recorderx;
